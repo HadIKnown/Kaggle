@@ -1,12 +1,19 @@
 import pandas as pd
+import numpy as np
+
+pd.options.display.max_rows = 10000
 
 raw_data = pd.read_csv('train.csv') 
+
+#to adjust final sale price prediction
+misc_values = raw_data['MiscVal']
 
 #Narrowed down to 20 features Dec 14
 
 def cleanData(data):
     # Bring back Condition1/2, LowQualFinSF, 
     # Bring back Id for........ maybe submission
+    # Bring back Utilities?
     drop_features = ['MSSubClass', 'LotFrontage', 'Street', 'Alley', 'LotShape', 
                      'LandContour', 'Condition1', 'Condition2', 'BldgType', 
                      'HouseStyle', 'YearBuilt', 'RoofStyle', 'Exterior2nd', 
@@ -15,21 +22,20 @@ def cleanData(data):
                      'GarageFinish', 'GarageCars', 'PavedDrive', 'Fence',
                      'MiscFeature', 'SaleType', 'LotConfig', 'Exterior1st',
                      'MasVnrArea', 'GarageType', 'SaleCondition', 'Id',
-                     'TotalBsmtSF']
+                     'TotalBsmtSF', 'MiscVal', 'Utilities']
     truncated_data = data.drop(drop_features, axis = 1, inplace = False)
     #Change all the degree'd categoricals into numbers
     seminumberedData = convertLeveledCats(truncated_data)
     engineerFeatures(truncated_data)
 
 def convertLeveledCats(data):
+    """
     from sklearn.preprocessing import LabelEncoder
     #in future, should have separate encoders for the values that
     #are required to adjust in engineerFeatures (BsmtUnfSF, LowQualFinSF, LotArea),  
     #TODO: normalize these encoded values
-    """le = LabelEncoder()
-    le.fit(['Po', 'Fa', 'TA', 'Gd', 'Ex'])
-    print le.classes_
-    data['ExterQual'] = le.transform(data['ExterQual'])
+    le = LabelEncoder()
+    data['ExterQual'] = le.fit_transform(data['ExterQual'])
     #print data['ExterQual']
     data['ExterCond'] = le.fit_transform(data['ExterCond'])
     data['BsmtQual'] = le.fit_transform(data['BsmtQual'])
@@ -50,25 +56,28 @@ def convertLeveledCats(data):
     qualcondbsmtfin = {'Unf': 1, 'LwQ': 2, 'Rec': 3, 'BLQ': 4, 'ALQ': 5, 
                        'GLQ': 6}
     qualcondland = {'Sev': 1, 'Mod': 2, 'Gtl': 3}
-    data = data.replace({'ExterQual': qualcond5, 
-                         'ExterCond': qualcond5,
-                         'BsmtQual': qualcond5,
-                         'BsmtCond': qualcond5,
-                         'KitchenQual': qualcond5,
-                         'FireplaceQu': qualcond5,
-                         'GarageQual': qualcond5,
-                         'GarageCond': qualcond5,
-                         'HeatingQC': qualcond5,
-                         'PoolQC': qualcondPool,
-                         'BsmtFinType1': qualcondbsmtfin,
-                         'BsmtFinType2': qualcondbsmtfin,
-                         'LandSlope': qualcondland})
+    data.replace({'ExterQual': qualcond5, 
+                  'ExterCond': qualcond5,
+                  'BsmtQual': qualcond5,
+                  'BsmtCond': qualcond5,
+                  'KitchenQual': qualcond5,
+                  'FireplaceQu': qualcond5,
+                  'GarageQual': qualcond5,
+                  'GarageCond': qualcond5,
+                  'HeatingQC': qualcond5,
+                  'PoolQC': qualcondPool,
+                  'BsmtFinType1': qualcondbsmtfin,
+                  'BsmtFinType2': qualcondbsmtfin,
+                  'LandSlope': qualcondland, 
+                  'CentralAir': {'Y': 1, 'N': 0}}, inplace = True)
     fillNA = ['ExterQual', 'ExterCond', 'BsmtQual', 'BsmtCond', 'KitchenQual', 
               'FireplaceQu', 'GarageQual', 'GarageCond', 'HeatingQC', 'PoolQC', 
-              'BsmtFinType1', 'BsmtFinType2', 'LandSlope']
+              'BsmtFinType1', 'BsmtFinType2']
     data[fillNA] = data[fillNA].fillna(value = 0)
-    temp = data[fillNA]
-    print temp
+    """for col in fillNA:
+        if data[col].isnull().values.any():
+            data[col] = data[col].fillna(value = 0)
+"""
 
 def engineerFeatures(data):
     #see if can find better adjust for inner square ft of home
@@ -93,8 +102,9 @@ def engineerFeatures(data):
     data['alt_fireplaces'] = data['Fireplaces'] * data['FireplaceQu'] #maybe cut
     data['outdoors_sqft'] = (data['WoodDeckSF'] + data['OpenPorchSF'] + 
                              data['EnclosedPorch'] + data['3SsnPorch'] + 
-                             data['ScreenPorch'])
-    data['pool_sqft'] = data['PoolArea'] * data['PoolQC']
+                             data['ScreenPorch'] + 
+                             (data['PoolArea'] * data['PoolQC']))
+    #data['pool_sqft'] = data['PoolArea'] * data['PoolQC'] add back later?
     data['date_sold'] = 365.25 * data['YrSold'] + 30.44 * data['MoSold']
     #drop old ones
     used_features = ['LandSlope', '1stFlrSF', '2ndFlrSF', 'LowQualFinSF',
@@ -109,4 +119,5 @@ def engineerFeatures(data):
                      'GarageCond']
     truncated_data = data.drop(used_features, axis = 1, inplace = False)
     print truncated_data
+
 cleanData(raw_data)
