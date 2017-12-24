@@ -1,24 +1,45 @@
+#This is a WIP.
+
 import pandas as pd
 import numpy as np
 from catboost import Pool, CatBoostRegressor
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.metrics import r2_score, make_scorer, mean_squared_error
 import math
+from sklearn.svm import SVR
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.preprocessing import MinMaxScaler
 
 raw_data = pd.read_csv('train.csv') 
-print raw_data
 
 #to adjust final sale price prediction
 misc_values = raw_data['MiscVal']
 
 #Narrowed down to 20 features Dec 14
 
+def dropOutliers(train, cat):
+    #From Kaggle kernel: https://www.kaggle.com/zoupet/
+                        #neural-network-model-for-house-prices-tensorflow
+    from sklearn.ensemble import IsolationForest
+                                                                           
+    clf = IsolationForest(max_samples = 100, random_state = 42) 
+    clf.fit(train)
+    y_noano = clf.predict(train)
+    y_noano = pd.DataFrame(y_noano, columns = ['Top'])
+    y_noano[y_noano['Top'] == 1].index.values
+
+    train = train.iloc[y_noano[y_noano['Top'] == 1].index.values]
+    train.reset_index(drop = True, inplace = True)
+    cat = cat.iloc[y_noano[y_noano['Top'] == 1].index.values]
+    cat.reset_index(drop = True, inplace = True)
+    return pd.concat([train, cat], axis = 1, join = 'inner')
+
 def regularize(column, dog = False):
     reg_column = (column - np.mean(column)) / (max(column) - min(column))
     #if dog: print reg_column.quantile(0.15), reg_column.quantile(0.3)               
     return reg_column
 
-def cleanData(data):
+def cleanData(data, test = False):
     # Bring back Condition1/2, LowQualFinSF, 
     # Bring back Id for........ maybe submission
     # Bring back Utilities?
@@ -34,9 +55,17 @@ def cleanData(data):
                      'MiscVal', 'HeatingQC', 'CentralAir', 'Functional']
     truncated_data = data.drop(drop_features, axis = 1, inplace = False)
     #Change all the degree'd categoricals into numbers
-    seminumberedData = convertLeveledCats(truncated_data)
-    cleanedData = engineerFeatures(truncated_data)
-    return cleanedData
+    seminumbered_data = convertLeveledCats(truncated_data)
+    hold = pd.DataFrame(seminumbered_data[['Foundation', 'Neighborhood']])
+    seminumbered_data.drop(['Foundation', 'Neighborhood'], axis = 1, inplace = True)
+    if test == True: 
+        undo = pd.concat([seminumbered_data, hold], axis = 1, join = 'inner')
+        cleaned_data = engineerFeatures(undo)
+    else: 
+        outgone_data = dropOutliers(seminumbered_data, hold)
+        cleaned_data = engineerFeatures(outgone_data)
+    
+    return cleaned_data
 
 def convertLeveledCats(data):
     """
@@ -93,6 +122,7 @@ def convertLeveledCats(data):
         if data[col].isnull().values.any():
             data[col] = data[col].fillna(value = 0)
 """
+    return data
 
 def engineerFeatures(data):
     #see if can find better adjust for inner square ft of home
@@ -116,7 +146,7 @@ def engineerFeatures(data):
                         bsmt2_adjust * data['BsmtFinSF2'] +
                         #bsmt1_adjust.quantile(0.1) * data['BsmtUnfSF'] +
                         garage_adjust * data['GarageArea']))  #maybe separate out
-    
+    data['huh'] = data['LowQualFinSF'] + data['BsmtUnfSF']
     data['alt_bathrooms'] = (data['BsmtFullBath'] + data['BsmtHalfBath'] + 
                              data['FullBath'] + data['HalfBath'])
     data['alt_kitchens'] = data['KitchenQual'] * data['KitchenAbvGr']
@@ -126,13 +156,14 @@ def engineerFeatures(data):
                                  data['ScreenPorch']) 
     data['Pool'] = data['PoolArea'] * data['PoolQC']
     data['outdoor_sqft'] = (data['LotArea'] - data['1stFlrSF'] - 
-                            data['dev_outdoors_sqft'])                     
+                            data['dev_outdoors_sqft'] - 
+                            garage_adjust * data['GarageArea'])                     
     #data['pool_sqft'] = data['PoolArea'] * data['PoolQC'] add back later?
     data['date_sold'] = 365.25 * data['YrSold'] + 30.44 * data['MoSold']
     data['date_sold'] = data['date_sold'] - min(data['date_sold'])
     data['YearRemodAdd'] = data['YearRemodAdd'] - min(data['YearRemodAdd']) 
     #drop old ones
-    used_features = ['LandSlope', '1stFlrSF', '2ndFlrSF',
+    used_features = ['LandSlope', '1stFlrSF', '2ndFlrSF', 'BsmtUnfSF',
                      'BsmtFinSF1', 'BsmtFinSF2', 'GarageArea',
                      'LotArea', '1stFlrSF', 'BsmtFullBath', 'BsmtHalfBath',
                      'FullBath', 'HalfBath', 'KitchenQual', 'KitchenAbvGr',
@@ -170,12 +201,49 @@ model.fit(train_pool)
 pred = model.predict(test_pool)
 print math.sqrt(mean_squared_error(y_test, pred))
 print model.get_feature_importance(train_pool)
+print r2_score(y_test, pred)
+
+#### Split data
+
+clean_data_RF = pd.get_dummies(clean_data) 
+X = clean_data_RF
+X_train, X_test, y_train, y_test = train_test_split(X, y,  
+                                                    test_size = 0.2, 
+                                                    random_state = 42)
+###### Random Forest ####### 
+"""
+rfr = RandomForestRegressor(random_state = 42)
+scorer = make_scorer(mean_squared_error)
+parameters = {'n_estimators': [10, 15, 50], 'criterion': ['mse', 'mae'], 
+              'min_samples_split': [2, 5], 'min_samples_leaf': [1, 2, 3]}
+grid_reg = GridSearchCV(rfr, parameters, scoring = scorer, cv = 10, refit = True)
+grid_reg.fit(X_train, y_train)
+pred = grid_reg.predict(X_test)
+print grid_reg.best_params_
+print 'RF:', math.sqrt(mean_squared_error(y_test, pred))
+print 'RF:', r2_score(y_test, pred)
+#previously 39900 and .79 with best estimator syntax
+"""
+
+######## SVM #########
+
+svr = SVR()
+scorer = make_scorer(mean_squared_error)
+parameters = {'C': [2**-3, 2**-2, 2**-1, 1, 2, 4, 8], 
+              'epsilon': [2**-3, 2**-2, 2**-1, 1, 2, 4, 8], 
+              'kernel': ['linear', 'poly', 'rbf', 'sigmoid'], 
+              'shrinking': [True, False]}
+grid_reg = GridSearchCV(svr, parameters, scoring = scorer, cv = 10, refit = True)
+grid_reg.fit(X_train, y_train)
+pred = grid_reg.predict(X_test)
+print grid_reg.best_params_
+print 'SVM:', math.sqrt(mean_squared_error(y_test, pred))
+print 'SVM:', r2_score(y_test, pred)
 
 ##### Submission #######
-
 test_data = pd.read_csv('test.csv')
 Id = pd.DataFrame(test_data['Id'])
-clean_data = cleanData(test_data)
+clean_data = cleanData(test_data, test = True)
 submission_test_pool = Pool(clean_data, cat_features = cat_features)
 pred_final = pd.DataFrame(model.predict(submission_test_pool))
 final_output = pd.concat([Id, pred_final], axis = 1, join = 'inner')
