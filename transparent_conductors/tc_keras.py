@@ -85,39 +85,44 @@ x_train, x_val, y_train, y_val = train_test_split(lattice_imgs_train,
                                                   
                                                 
 ########################################
+### If predictions are much closer (like proper order of magnitude),
+### submit predictions. THEN Add another conv, increase nodes everywhere, 
+### then run on AWS again for the night. While running, set up TF GPU on 
+### Tiensi PC.
+#######################################
+
 def getModel():
     #Build keras model
     
     model=Sequential()
     # Padding????/
     # CNN 1
-    model.add(Conv3D(128, kernel_size=(3, 3, 3),activation='relu', #quadruple everyhting
+    model.add(Conv3D(512, kernel_size=(5, 5, 5),activation='relu', #quadruple everyhting
                      input_shape=(26, 26, 26, 4)))
     model.add(MaxPooling3D(pool_size=(3, 3, 3), strides=(2, 2, 2)))
     model.add(Dropout(0.2))
 
     # CNN 2
-    model.add(Conv3D(64, kernel_size=(3, 3, 3), activation='relu' ))
-    model.add(MaxPooling3D(pool_size=(3, 3, 3), strides=(2, 2, 2)))
-    model.add(Dropout(0.2))
-
-    # CNN 3
-    model.add(Conv3D(32, kernel_size=(3, 3, 3), activation='relu'))
+    model.add(Conv3D(256, kernel_size=(3, 3, 3), activation='relu' ))
     model.add(MaxPooling3D(pool_size=(2, 2, 2), strides=(2, 2, 2)))
     model.add(Dropout(0.2))
 
+    # CNN 3
+    model.add(Conv3D(128, kernel_size=(3, 3, 3), activation='relu' ))
+    model.add(MaxPooling3D(pool_size=(2, 2, 2), strides=(2, 2, 2)))
+    model.add(Dropout(0.2))
 
     # You must flatten the data for the dense layers
     model.add(Flatten())
 
     #Dense 1
-    model.add(Dense(128, activation='relu')) #add the other features here
+    model.add(Dense(1024, activation='relu')) #add the other features here
     model.add(Dropout(0.2))
 
     #Dense 2
-    model.add(Dense(56, activation='relu'))
+    model.add(Dense(512, activation='relu'))
     model.add(Dropout(0.2))
-
+    
     # Output 
     model.add(Dense(2, activation='relu'))
 
